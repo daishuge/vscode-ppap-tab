@@ -10,14 +10,15 @@ PPAP Tab 是一个开源 VSCode inline ghost-text / Tab 自动补全扩展。它
 - 支持多行补全、当前文件 prefix/suffix、可见/已打开文件上下文。
 - 体验优先：默认零 debounce、主动编辑后触发、主动光标移动后触发、放大上下文和补全 token budget。
 - VSCode 取消自动补全请求后，仍保留已经发出的 PPAP 请求；结果返回后会缓存并在光标未移动时重新触发显示。
+- 右下角状态栏忠实反映请求状态：真实网络请求未结束时保持转圈，多请求并发时显示请求数，全部结束后才切回 ready 或 warning。
 - 不把 API key 写进仓库、VSCode settings 或 release 包。
 
 ## 安装
 
-从 GitHub Release 下载最新版 VSIX，例如 `ppap-tab-0.2.1.vsix`，然后安装：
+从 GitHub Release 下载最新版 VSIX，例如 `ppap-tab-0.2.2.vsix`，然后安装：
 
 ```powershell
-code --install-extension .\ppap-tab-0.2.1.vsix --force
+code --install-extension .\ppap-tab-0.2.2.vsix --force
 ```
 
 安装后重载 VSCode。
@@ -102,14 +103,15 @@ PPAP Tab is an open-source VSCode inline ghost-text / Tab completion extension. 
 - Support multi-line completions, current-file prefix/suffix context, and visible/open file context.
 - Prioritize user experience: zero debounce by default, active triggers after edits and cursor movement, larger context windows, and a larger completion budget.
 - Keep in-flight PPAP requests alive after VSCode cancels an automatic inline request; cache late responses and retrigger display when the cursor has not moved.
+- Make the bottom-right status bar reflect real request state: keep spinning while network requests are active, show the in-flight count for concurrent requests, and only return to ready or warning after all requests finish.
 - Keep API keys out of the repository, VSCode settings, and release packages.
 
 ## Install
 
-Download the latest VSIX from GitHub Releases, for example `ppap-tab-0.2.1.vsix`, then install it:
+Download the latest VSIX from GitHub Releases, for example `ppap-tab-0.2.2.vsix`, then install it:
 
 ```powershell
-code --install-extension .\ppap-tab-0.2.1.vsix --force
+code --install-extension .\ppap-tab-0.2.2.vsix --force
 ```
 
 Reload VSCode after installation.

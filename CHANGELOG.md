@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2
+
+- Make the status bar reflect real in-flight PPAP request state with request counting.
+- Keep the spinner visible while any network request is still pending, including late responses after VSCode cancellation.
+- Show ready, disabled, or last-error states only after all active requests finish.
+
 ## 0.2.1
 
 - Keep in-flight PPAP requests alive after VS Code cancels an automatic inline-completion request.

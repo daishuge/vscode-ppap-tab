@@ -2,7 +2,7 @@
   "name": "ppap-tab",
   "displayName": "PPAP Tab",
   "description": "Cursor/Copilot-style VS Code inline Tab completion for OpenAI-compatible PPAP endpoints.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "daishuge",
   "license": "MIT",
   "repository": {

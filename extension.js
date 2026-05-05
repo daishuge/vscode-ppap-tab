@@ -7,6 +7,10 @@ let output;
 let statusBar;
 let provider;
 const envCache = new Map();
+const statusState = {
+  inFlight: 0,
+  lastError: ''
+};
 
 const CURSOR_MARKER = '<|cursor|>';
 const ENV_CACHE_TTL_MS = 30 * 60 * 1000;
@@ -17,6 +21,60 @@ function now() {
 
 function log(message) {
   output?.appendLine(`[${now()}] ${message}`);
+}
+
+function shortStatusError(error) {
+  return String(error?.message || error || '').replace(/\s+/g, ' ').slice(0, 180);
+}
+
+function renderStatus() {
+  if (!statusBar) {
+    return;
+  }
+  const enabled = getConfig().enabled;
+  if (!enabled) {
+    statusBar.text = '$(circle-slash) PPAP';
+    statusBar.tooltip = 'PPAP Tab inline completion is disabled';
+    statusBar.show();
+    return;
+  }
+  if (statusState.inFlight > 0) {
+    statusBar.text = statusState.inFlight > 1 ? `$(sync~spin) PPAP ${statusState.inFlight}` : '$(sync~spin) PPAP';
+    statusBar.tooltip = `PPAP Tab is waiting for ${statusState.inFlight} request${statusState.inFlight === 1 ? '' : 's'}`;
+    statusBar.show();
+    return;
+  }
+  if (statusState.lastError) {
+    statusBar.text = '$(warning) PPAP';
+    statusBar.tooltip = `PPAP Tab last request failed: ${statusState.lastError}`;
+    statusBar.show();
+    return;
+  }
+  statusBar.text = '$(sparkle) PPAP';
+  statusBar.tooltip = 'PPAP Tab inline completion is ready';
+  statusBar.show();
+}
+
+function beginStatusRequest(kind) {
+  statusState.inFlight += 1;
+  statusState.lastError = '';
+  renderStatus();
+  log(`status begin ${kind}; inFlight=${statusState.inFlight}`);
+  let ended = false;
+  return (error) => {
+    if (ended) {
+      return;
+    }
+    ended = true;
+    statusState.inFlight = Math.max(0, statusState.inFlight - 1);
+    if (error) {
+      statusState.lastError = shortStatusError(error);
+    } else {
+      statusState.lastError = '';
+    }
+    log(`status end ${kind}; inFlight=${statusState.inFlight}${error ? ` error=${statusState.lastError}` : ''}`);
+    renderStatus();
+  };
 }
 
 function makeRequestId() {
@@ -592,9 +650,19 @@ class PpapInlineProvider {
     if (existing) {
       return existing;
     }
-    const request = callPpap(config, prompt.messages, token, prompt, { abortOnCancellation: false }).finally(() => {
-      this.pending.delete(cacheKey);
-    });
+    const endStatus = beginStatusRequest('completion');
+    const request = callPpap(config, prompt.messages, token, prompt, { abortOnCancellation: false })
+      .then((completion) => {
+        endStatus();
+        return completion;
+      })
+      .catch((error) => {
+        endStatus(error);
+        throw error;
+      })
+      .finally(() => {
+        this.pending.delete(cacheKey);
+      });
     this.pending.set(cacheKey, request);
     return request;
   }
@@ -602,7 +670,7 @@ class PpapInlineProvider {
   async provideInlineCompletionItems(document, position, context, token) {
     const config = getConfig();
     if (shouldSkipDocument(document, config)) {
-      updateStatus(false);
+      renderStatus();
       return undefined;
     }
 
@@ -625,7 +693,6 @@ class PpapInlineProvider {
     }
 
     const snapshot = this.snapshot(document, position, cacheKey);
-    updateStatus(true, '$(sync~spin) PPAP');
     try {
       const started = Date.now();
       const completion = await this.runRequest(cacheKey, config, prompt, token);
@@ -633,7 +700,6 @@ class PpapInlineProvider {
       if (token.isCancellationRequested) {
         if (completion) {
           log(`completion cached after cancellation ${Date.now() - started}ms ${document.languageId} ${completion.length} chars`);
-          updateStatus(true, '$(sparkle) PPAP');
           this.scheduleRetrigger(snapshot);
         }
         return undefined;
@@ -644,7 +710,6 @@ class PpapInlineProvider {
         }
         return undefined;
       }
-      updateStatus(true, '$(sparkle) PPAP');
       if (completion) {
         log(`completion ok ${Date.now() - started}ms ${document.languageId} ${completion.length} chars`);
         return { items: [this.makeItem(document, position, completion, prompt, 'network')] };
@@ -652,7 +717,6 @@ class PpapInlineProvider {
       log(`completion empty ${Date.now() - started}ms ${document.languageId}`);
       return undefined;
     } catch (error) {
-      updateStatus(true, '$(warning) PPAP');
       log(`completion error: ${error.message || error}`);
       return undefined;
     }
@@ -693,43 +757,31 @@ class PpapInlineProvider {
   }
 }
 
-function updateStatus(enabled, text) {
-  if (!statusBar) {
-    return;
-  }
-  if (enabled === undefined) {
-    enabled = getConfig().enabled;
-  }
-  statusBar.text = text || (enabled ? '$(sparkle) PPAP' : '$(circle-slash) PPAP');
-  statusBar.tooltip = enabled ? 'PPAP Tab inline completion is enabled' : 'PPAP Tab inline completion is disabled';
-  statusBar.show();
-}
-
 async function setEnabled(enabled) {
   await vscode.workspace.getConfiguration('ppapTab').update('enabled', enabled, vscode.ConfigurationTarget.Global);
-  updateStatus(enabled);
+  renderStatus();
   log(`enabled=${enabled}`);
 }
 
 async function testApi() {
   const config = getConfig();
-  updateStatus(true, '$(sync~spin) PPAP test');
   const tokenSource = new vscode.CancellationTokenSource();
+  const endStatus = beginStatusRequest('test');
   try {
     const started = Date.now();
     const completion = await callPpap(config, [
       { role: 'system', content: 'Return only the missing JavaScript expression.' },
       { role: 'user', content: 'Complete: const doubled = nums.' }
     ], tokenSource.token);
+    endStatus();
     const message = `PPAP Tab test OK in ${Date.now() - started}ms: ${completion.slice(0, 80)}`;
     log(message);
     vscode.window.showInformationMessage(message);
-    updateStatus(true);
   } catch (error) {
+    endStatus(error);
     const message = `PPAP Tab test failed: ${error.message || error}`;
     log(message);
     vscode.window.showErrorMessage(message);
-    updateStatus(true, '$(warning) PPAP');
   } finally {
     tokenSource.dispose();
   }
@@ -769,11 +821,11 @@ function activate(context) {
   }));
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration('ppapTab')) {
-      updateStatus();
+      renderStatus();
     }
   }));
 
-  updateStatus();
+  renderStatus();
   setTimeout(prewarmEnvironmentCache, 0);
   log('PPAP Tab activated');
 }
