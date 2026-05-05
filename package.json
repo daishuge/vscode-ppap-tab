@@ -2,7 +2,7 @@
   "name": "ppap-tab",
   "displayName": "PPAP Tab",
   "description": "Cursor/Copilot-style VS Code inline Tab completion for OpenAI-compatible PPAP endpoints.",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "publisher": "daishuge",
   "license": "MIT",
   "repository": {
@@ -482,6 +482,11 @@
           "type": "boolean",
           "default": true,
           "description": "Trigger inline suggestions when the VS Code window regains focus."
+        },
+        "ppapTab.discardPendingOnEdit": {
+          "type": "boolean",
+          "default": true,
+          "description": "Abort and discard pending completion requests for the active document whenever the user changes its text."
         },
         "ppapTab.autoTriggerBurstCount": {
           "type": "number",

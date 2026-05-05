@@ -164,6 +164,7 @@ function getConfig() {
     autoTriggerAfterDocumentSave: cfg.get('autoTriggerAfterDocumentSave', true),
     autoTriggerAfterClipboardCommand: cfg.get('autoTriggerAfterClipboardCommand', true),
     autoTriggerAfterWindowFocus: cfg.get('autoTriggerAfterWindowFocus', true),
+    discardPendingOnEdit: cfg.get('discardPendingOnEdit', true),
     autoTriggerBurstCount: cfg.get('autoTriggerBurstCount', 3),
     autoTriggerBurstIntervalMs: cfg.get('autoTriggerBurstIntervalMs', 80),
     maxScheduledTriggers: cfg.get('maxScheduledTriggers', 100),
@@ -477,6 +478,15 @@ async function callPpap(config, messages, token, cleanupContext = {}, options = 
   const disposable = token && abortOnCancellation
     ? token.onCancellationRequested(() => abortController.abort())
     : { dispose() {} };
+  const externalSignal = options.signal;
+  const abortFromExternalSignal = () => abortController.abort(externalSignal?.reason);
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      abortFromExternalSignal();
+    } else {
+      externalSignal.addEventListener('abort', abortFromExternalSignal, { once: true });
+    }
+  }
   try {
     const response = await fetch(`${config.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -502,6 +512,9 @@ async function callPpap(config, messages, token, cleanupContext = {}, options = 
     return cleanCompletion(json.choices?.[0]?.message?.content || '', cleanupContext, config);
   } finally {
     clearTimeout(timeout);
+    if (externalSignal) {
+      externalSignal.removeEventListener('abort', abortFromExternalSignal);
+    }
     disposable.dispose();
   }
 }
@@ -513,6 +526,7 @@ class PpapInlineProvider {
     this.current = undefined;
     this.activeTriggerTimers = new Set();
     this.retriggerTimers = new Map();
+    this.documentGenerations = new Map();
     this.stats = {
       shown: 0,
       accepted: 0,
@@ -522,10 +536,49 @@ class PpapInlineProvider {
     };
   }
 
+  documentKey(documentOrUri) {
+    return typeof documentOrUri === 'string' ? documentOrUri : documentOrUri.uri.toString();
+  }
+
+  documentGeneration(documentOrUri) {
+    return this.documentGenerations.get(this.documentKey(documentOrUri)) || 0;
+  }
+
+  discardPendingForDocument(documentOrUri, reason) {
+    const documentUri = this.documentKey(documentOrUri);
+    const generation = this.documentGeneration(documentUri) + 1;
+    this.documentGenerations.set(documentUri, generation);
+    if (this.current?.documentUri === documentUri) {
+      this.current = undefined;
+    }
+    let discarded = 0;
+    for (const [cacheKey, entry] of this.pending) {
+      if (entry.documentUri !== documentUri) {
+        continue;
+      }
+      entry.discardReason = reason || 'document changed';
+      discarded += 1;
+      try {
+        entry.abortController.abort(entry.discardReason);
+      } catch (error) {
+        log(`discard abort failed: ${error.message || error}`);
+      }
+      this.pending.delete(cacheKey);
+    }
+    for (const [cacheKey, timer] of this.retriggerTimers) {
+      if (cacheKey.startsWith(`${documentUri}:`)) {
+        clearTimeout(timer);
+        this.retriggerTimers.delete(cacheKey);
+      }
+    }
+    log(`discarded pending completions for ${documentUri} generation=${generation} count=${discarded} reason=${reason}`);
+  }
+
   snapshot(document, position, cacheKey) {
     return {
       documentUri: document.uri.toString(),
       version: document.version,
+      generation: this.documentGeneration(document),
       cacheKey,
       position: { line: position.line, character: position.character }
     };
@@ -537,6 +590,9 @@ class PpapInlineProvider {
       return false;
     }
     if (editor.document.version !== snapshot.version) {
+      return false;
+    }
+    if (this.documentGeneration(snapshot.documentUri) !== snapshot.generation) {
       return false;
     }
     const active = editor.selection.active;
@@ -664,25 +720,42 @@ class PpapInlineProvider {
     };
   }
 
-  async runRequest(cacheKey, config, prompt, token) {
+  async runRequest(cacheKey, config, prompt, token, requestContext = {}) {
     const existing = this.pending.get(cacheKey);
     if (existing) {
-      return existing;
+      return existing.promise;
     }
+    const abortController = new AbortController();
+    const entry = {
+      abortController,
+      documentUri: requestContext.documentUri || '',
+      generation: requestContext.generation || 0,
+      discardReason: ''
+    };
     const endStatus = beginStatusRequest('completion');
-    const request = callPpap(config, prompt.messages, token, prompt, { abortOnCancellation: false })
+    const request = callPpap(config, prompt.messages, token, prompt, { abortOnCancellation: false, signal: abortController.signal })
       .then((completion) => {
         endStatus();
+        if (entry.discardReason) {
+          log(`completion discarded after response reason=${entry.discardReason}`);
+          return '';
+        }
         return completion;
       })
       .catch((error) => {
+        if (entry.discardReason || error?.name === 'AbortError') {
+          endStatus();
+          log(`completion discarded before response reason=${entry.discardReason || error?.message || error}`);
+          return '';
+        }
         endStatus(error);
         throw error;
       })
       .finally(() => {
         this.pending.delete(cacheKey);
       });
-    this.pending.set(cacheKey, request);
+    entry.promise = request;
+    this.pending.set(cacheKey, entry);
     return request;
   }
 
@@ -714,7 +787,10 @@ class PpapInlineProvider {
     const snapshot = this.snapshot(document, position, cacheKey);
     try {
       const started = Date.now();
-      const completion = await this.runRequest(cacheKey, config, prompt, token);
+      const completion = await this.runRequest(cacheKey, config, prompt, token, {
+        documentUri: document.uri.toString(),
+        generation: snapshot.generation
+      });
       this.rememberCache(cacheKey, completion, config);
       if (token.isCancellationRequested) {
         if (completion) {
@@ -864,6 +940,9 @@ function activate(context) {
     const config = getConfig();
     const editor = vscode.window.activeTextEditor;
     if (config.aggressiveAutoTrigger && config.autoTriggerAfterEdit && editor && event.document.uri.toString() === editor.document.uri.toString()) {
+      if (config.discardPendingOnEdit) {
+        provider.discardPendingForDocument(event.document, 'active document edited');
+      }
       provider.triggerActiveInlineSoon('edit', config.autoTriggerDelayMs);
     }
   }));

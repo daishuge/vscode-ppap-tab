@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.4
+
+- Discard stale completion work as soon as the active document text changes.
+- Abort pending network requests for the edited document instead of letting old completions return into a newer cursor context.
+- Keep VSCode lifecycle cancellation tolerant, but treat real user edits as authoritative invalidation.
+
 ## 0.2.3
 
 - Add aggressive trigger mode for nearly every editor movement or edit event.
