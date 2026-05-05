@@ -2,7 +2,7 @@
   "name": "ppap-tab",
   "displayName": "PPAP Tab",
   "description": "Cursor/Copilot-style VS Code inline Tab completion for OpenAI-compatible PPAP endpoints.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "daishuge",
   "license": "MIT",
   "repository": {
@@ -91,42 +91,42 @@
         },
         "ppapTab.debounceMs": {
           "type": "number",
-          "default": 220,
+          "default": 0,
           "minimum": 0,
           "maximum": 2000,
-          "description": "Delay before asking PPAP for a suggestion."
+          "description": "Delay before asking PPAP for a suggestion. Lower values favor responsiveness over request volume."
         },
         "ppapTab.timeoutMs": {
           "type": "number",
-          "default": 7000,
+          "default": 15000,
           "minimum": 1000,
           "maximum": 30000,
           "description": "HTTP request timeout."
         },
         "ppapTab.maxPrefixChars": {
           "type": "number",
-          "default": 5000,
+          "default": 12000,
           "minimum": 500,
           "maximum": 30000,
           "description": "Maximum characters before the cursor sent as context."
         },
         "ppapTab.maxSuffixChars": {
           "type": "number",
-          "default": 1200,
+          "default": 4000,
           "minimum": 0,
           "maximum": 10000,
           "description": "Maximum characters after the cursor sent as context."
         },
         "ppapTab.maxCompletionTokens": {
           "type": "number",
-          "default": 128,
+          "default": 256,
           "minimum": 16,
           "maximum": 1024,
           "description": "Maximum completion tokens requested from the model."
         },
         "ppapTab.maxCompletionChars": {
           "type": "number",
-          "default": 1600,
+          "default": 4000,
           "minimum": 80,
           "maximum": 12000,
           "description": "Maximum inserted characters after cleanup."
@@ -138,21 +138,21 @@
         },
         "ppapTab.maxOpenFiles": {
           "type": "number",
-          "default": 3,
+          "default": 8,
           "minimum": 0,
           "maximum": 12,
           "description": "Maximum non-active open files sent as context."
         },
         "ppapTab.maxOpenFileChars": {
           "type": "number",
-          "default": 1200,
+          "default": 4000,
           "minimum": 0,
           "maximum": 8000,
           "description": "Maximum characters per open-file context snippet."
         },
         "ppapTab.maxCacheEntries": {
           "type": "number",
-          "default": 100,
+          "default": 250,
           "minimum": 0,
           "maximum": 1000,
           "description": "Maximum recent inline completions cached by cursor context."
@@ -164,9 +164,26 @@
           "maximum": 300000,
           "description": "How long PPAP Tab reuses the currently shown suggestion while the user types into it."
         },
+        "ppapTab.autoTriggerAfterEdit": {
+          "type": "boolean",
+          "default": true,
+          "description": "Actively trigger inline suggestions after edits, instead of relying only on VS Code's automatic provider scheduling."
+        },
+        "ppapTab.autoTriggerAfterCursorMove": {
+          "type": "boolean",
+          "default": true,
+          "description": "Actively trigger inline suggestions after cursor movement."
+        },
+        "ppapTab.autoTriggerDelayMs": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 2000,
+          "description": "Delay before active inline suggestion triggers."
+        },
         "ppapTab.temperature": {
           "type": "number",
-          "default": 0.1,
+          "default": 0.05,
           "minimum": 0,
           "maximum": 2,
           "description": "Sampling temperature."

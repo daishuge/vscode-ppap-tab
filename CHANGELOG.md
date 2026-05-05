@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Keep in-flight PPAP requests alive after VS Code cancels an automatic inline-completion request.
+- Cache late completions and retrigger inline suggestions when the cursor has not moved.
+- Use zero debounce, expand prefix/suffix/open-file context, increase completion budget, actively trigger inline suggestions after edits and cursor movement, and prewarm the environment cache for faster first completions.
+
 ## 0.2.0
 
 - Move PPAP Tab into a standalone project ready for GitHub release.

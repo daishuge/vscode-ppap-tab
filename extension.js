@@ -9,6 +9,7 @@ let provider;
 const envCache = new Map();
 
 const CURSOR_MARKER = '<|cursor|>';
+const ENV_CACHE_TTL_MS = 30 * 60 * 1000;
 
 function now() {
   return new Date().toISOString();
@@ -36,7 +37,7 @@ function readPersistentWindowsEnv(name) {
     return '';
   }
   const cached = envCache.get(name);
-  if (cached && Date.now() - cached.time < 30000) {
+  if (cached && Date.now() - cached.time < ENV_CACHE_TTL_MS) {
     return cached.value;
   }
   const script = [
@@ -83,18 +84,21 @@ function getConfig() {
     urlEnvName,
     keyEnvName,
     secretEnvPath: cfg.get('secretEnvPath', 'D:\\codex\\secret\\cliproxy-image-cli.env'),
-    debounceMs: cfg.get('debounceMs', 220),
-    timeoutMs: cfg.get('timeoutMs', 7000),
-    maxPrefixChars: cfg.get('maxPrefixChars', 5000),
-    maxSuffixChars: cfg.get('maxSuffixChars', 1200),
-    maxCompletionTokens: cfg.get('maxCompletionTokens', 128),
-    maxCompletionChars: cfg.get('maxCompletionChars', 1600),
+    debounceMs: cfg.get('debounceMs', 0),
+    timeoutMs: cfg.get('timeoutMs', 15000),
+    maxPrefixChars: cfg.get('maxPrefixChars', 12000),
+    maxSuffixChars: cfg.get('maxSuffixChars', 4000),
+    maxCompletionTokens: cfg.get('maxCompletionTokens', 256),
+    maxCompletionChars: cfg.get('maxCompletionChars', 4000),
     includeOpenFilesContext: cfg.get('includeOpenFilesContext', true),
-    maxOpenFiles: cfg.get('maxOpenFiles', 3),
-    maxOpenFileChars: cfg.get('maxOpenFileChars', 1200),
-    maxCacheEntries: cfg.get('maxCacheEntries', 100),
+    maxOpenFiles: cfg.get('maxOpenFiles', 8),
+    maxOpenFileChars: cfg.get('maxOpenFileChars', 4000),
+    maxCacheEntries: cfg.get('maxCacheEntries', 250),
     typingReuseMs: cfg.get('typingReuseMs', 30000),
-    temperature: cfg.get('temperature', 0.1),
+    autoTriggerAfterEdit: cfg.get('autoTriggerAfterEdit', true),
+    autoTriggerAfterCursorMove: cfg.get('autoTriggerAfterCursorMove', true),
+    autoTriggerDelayMs: cfg.get('autoTriggerDelayMs', 0),
+    temperature: cfg.get('temperature', 0.05),
     excludePatterns: cfg.get('excludePatterns', [])
   };
 }
@@ -128,6 +132,21 @@ function loadSecret(config) {
   }
   const env = parseEnvFile(config.secretEnvPath);
   return env.CLIPROXY_API_KEY || env.PPAP_API_KEY || '';
+}
+
+function prewarmEnvironmentCache() {
+  const config = getConfig();
+  const names = [
+    config.urlEnvName,
+    config.keyEnvName,
+    'PPAP_COMPLETION_URL',
+    'PPAP_COMPLETION_KEY',
+    'PPAP_API_KEY'
+  ].filter(Boolean);
+  for (const name of names) {
+    readEnvValue(name);
+  }
+  log('environment cache prewarmed');
 }
 
 function documentTextBefore(document, position, maxChars) {
@@ -272,7 +291,8 @@ function buildPrompt(document, position, context, config) {
         `Predict only the exact text to insert at ${CURSOR_MARKER}.`,
         'Use the current file, suffix after the cursor, and recently viewed files as context.',
         'Do not return Markdown fences, explanations, XML tags, or code already present after the cursor.',
-        'Prefer short directly insertable completions. Return an empty string if no useful completion is clear.'
+        'Prefer directly insertable completions, including multi-line completions when useful.',
+        'Make a best-effort completion when likely helpful; return an empty string only when insertion would be harmful.'
       ].join(' ')
     },
     {
@@ -375,14 +395,17 @@ function cleanCompletion(text, context = {}, config = getConfig()) {
   return cleaned;
 }
 
-async function callPpap(config, messages, token, cleanupContext = {}) {
+async function callPpap(config, messages, token, cleanupContext = {}, options = {}) {
   const apiKey = loadSecret(config);
   if (!apiKey) {
     throw new Error(`No PPAP key found in ${config.secretEnvPath}`);
   }
+  const abortOnCancellation = options.abortOnCancellation !== false;
   const abortController = new AbortController();
   const timeout = setTimeout(() => abortController.abort(), config.timeoutMs);
-  const disposable = token.onCancellationRequested(() => abortController.abort());
+  const disposable = token && abortOnCancellation
+    ? token.onCancellationRequested(() => abortController.abort())
+    : { dispose() {} };
   try {
     const response = await fetch(`${config.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -396,7 +419,7 @@ async function callPpap(config, messages, token, cleanupContext = {}) {
         max_tokens: config.maxCompletionTokens,
         temperature: config.temperature,
         stream: false,
-        stop: ['</code_before_cursor>', '</code_after_cursor>', '</current_file_cursor_window>', '\n\n\n']
+        stop: ['</code_before_cursor>', '</code_after_cursor>', '</current_file_cursor_window>']
       }),
       signal: abortController.signal
     });
@@ -416,8 +439,9 @@ class PpapInlineProvider {
   constructor() {
     this.cache = new Map();
     this.pending = new Map();
-    this.requestSerial = 0;
     this.current = undefined;
+    this.activeTriggerTimer = undefined;
+    this.retriggerTimers = new Map();
     this.stats = {
       shown: 0,
       accepted: 0,
@@ -427,7 +451,83 @@ class PpapInlineProvider {
     };
   }
 
+  snapshot(document, position, cacheKey) {
+    return {
+      documentUri: document.uri.toString(),
+      version: document.version,
+      cacheKey,
+      position: { line: position.line, character: position.character }
+    };
+  }
+
+  isSnapshotActive(snapshot) {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.document.uri.toString() !== snapshot.documentUri) {
+      return false;
+    }
+    if (editor.document.version !== snapshot.version) {
+      return false;
+    }
+    const active = editor.selection.active;
+    return active.line === snapshot.position.line && active.character === snapshot.position.character;
+  }
+
+  triggerActiveInlineSoon(reason, delayMs) {
+    const config = getConfig();
+    if (!config.enabled) {
+      return;
+    }
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || shouldSkipDocument(editor.document, config)) {
+      return;
+    }
+    if (this.activeTriggerTimer) {
+      clearTimeout(this.activeTriggerTimer);
+    }
+    const delay = Math.max(0, Number(delayMs ?? config.autoTriggerDelayMs) || 0);
+    this.activeTriggerTimer = setTimeout(async () => {
+      this.activeTriggerTimer = undefined;
+      const activeEditor = vscode.window.activeTextEditor;
+      if (!activeEditor || shouldSkipDocument(activeEditor.document, getConfig())) {
+        return;
+      }
+      try {
+        log(`trigger inline suggest after ${reason}`);
+        await vscode.commands.executeCommand('editor.action.inlineSuggest.trigger');
+      } catch (error) {
+        log(`trigger inline suggest failed: ${error.message || error}`);
+      }
+    }, delay);
+  }
+
+  scheduleRetrigger(snapshot) {
+    if (!snapshot || !this.isSnapshotActive(snapshot)) {
+      return;
+    }
+    const existing = this.retriggerTimers.get(snapshot.cacheKey);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    const timer = setTimeout(async () => {
+      this.retriggerTimers.delete(snapshot.cacheKey);
+      if (!this.isSnapshotActive(snapshot)) {
+        return;
+      }
+      try {
+        log('completion ready after cancellation; retriggering inline suggest');
+        await vscode.commands.executeCommand('editor.action.inlineSuggest.trigger');
+      } catch (error) {
+        log(`completion retrigger failed: ${error.message || error}`);
+      }
+    }, 30);
+    this.retriggerTimers.set(snapshot.cacheKey, timer);
+  }
+
   rememberCache(key, completion, config) {
+    if (!completion) {
+      this.cache.delete(key);
+      return;
+    }
     this.cache.set(key, completion);
     while (this.cache.size > config.maxCacheEntries) {
       this.cache.delete(this.cache.keys().next().value);
@@ -492,7 +592,7 @@ class PpapInlineProvider {
     if (existing) {
       return existing;
     }
-    const request = callPpap(config, prompt.messages, token, prompt).finally(() => {
+    const request = callPpap(config, prompt.messages, token, prompt, { abortOnCancellation: false }).finally(() => {
       this.pending.delete(cacheKey);
     });
     this.pending.set(cacheKey, request);
@@ -503,11 +603,6 @@ class PpapInlineProvider {
     const config = getConfig();
     if (shouldSkipDocument(document, config)) {
       updateStatus(false);
-      return undefined;
-    }
-
-    const linePrefix = document.lineAt(position.line).text.slice(0, position.character);
-    if (linePrefix.trim().length === 0 && context.triggerKind !== vscode.InlineCompletionTriggerKind.Invoke) {
       return undefined;
     }
 
@@ -529,15 +624,26 @@ class PpapInlineProvider {
       return undefined;
     }
 
-    const serial = ++this.requestSerial;
+    const snapshot = this.snapshot(document, position, cacheKey);
     updateStatus(true, '$(sync~spin) PPAP');
     try {
       const started = Date.now();
       const completion = await this.runRequest(cacheKey, config, prompt, token);
-      if (token.isCancellationRequested || serial !== this.requestSerial) {
+      this.rememberCache(cacheKey, completion, config);
+      if (token.isCancellationRequested) {
+        if (completion) {
+          log(`completion cached after cancellation ${Date.now() - started}ms ${document.languageId} ${completion.length} chars`);
+          updateStatus(true, '$(sparkle) PPAP');
+          this.scheduleRetrigger(snapshot);
+        }
         return undefined;
       }
-      this.rememberCache(cacheKey, completion, config);
+      if (!this.isSnapshotActive(snapshot)) {
+        if (completion) {
+          log(`completion cached for stale cursor ${Date.now() - started}ms ${document.languageId} ${completion.length} chars`);
+        }
+        return undefined;
+      }
       updateStatus(true, '$(sparkle) PPAP');
       if (completion) {
         log(`completion ok ${Date.now() - started}ms ${document.languageId} ${completion.length} chars`);
@@ -648,6 +754,19 @@ function activate(context) {
   }));
   context.subscriptions.push(vscode.commands.registerCommand('ppapTab.test', testApi));
   context.subscriptions.push(vscode.commands.registerCommand('ppapTab.showOutput', () => output.show()));
+  context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
+    const config = getConfig();
+    const editor = vscode.window.activeTextEditor;
+    if (config.autoTriggerAfterEdit && editor && event.document.uri.toString() === editor.document.uri.toString()) {
+      provider.triggerActiveInlineSoon('edit', config.autoTriggerDelayMs);
+    }
+  }));
+  context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection((event) => {
+    const config = getConfig();
+    if (config.autoTriggerAfterCursorMove && event.textEditor === vscode.window.activeTextEditor) {
+      provider.triggerActiveInlineSoon('cursor move', config.autoTriggerDelayMs);
+    }
+  }));
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration('ppapTab')) {
       updateStatus();
@@ -655,6 +774,7 @@ function activate(context) {
   }));
 
   updateStatus();
+  setTimeout(prewarmEnvironmentCache, 0);
   log('PPAP Tab activated');
 }
 
