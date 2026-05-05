@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3
+
+- Add aggressive trigger mode for nearly every editor movement or edit event.
+- Wrap common editor keys and commands so Enter, Space, Backspace, Delete, paste, cut, copy, undo, redo, arrows, selection movement, Home, End, PageUp, and PageDown run the normal editor action and then trigger inline completion.
+- Replace single debounce-style trigger scheduling with trigger bursts, so rapid editor events do not cancel earlier trigger attempts.
+- Trigger after active editor changes, visible editor/range changes, document open/save, and window focus.
+
 ## 0.2.2
 
 - Make the status bar reflect real in-flight PPAP request state with request counting.

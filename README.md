@@ -13,6 +13,8 @@ PPAP Tab 是一个开源 VSCode inline ghost-text 自动补全扩展。它使用
 - 支持单行和多行补全。
 - 使用当前文件 prefix/suffix、当前光标窗口、可见/已打开文件片段作为上下文。
 - 默认体验优先：零 debounce、编辑后主动触发、光标移动后主动触发、较大的上下文和补全预算。
+- aggressive trigger 模式会在常见编辑器动作后主动触发补全：输入、空格、回车、退格、删除、粘贴、剪切、复制、撤回、重做、方向键、选择移动、Home/End、PageUp/PageDown、切换文件、打开/保存文件、滚动可见区域、窗口重新获得焦点。
+- 每次触发会发起多次 trigger burst，避免快速连续操作时前一次触发被后一次覆盖。
 - VSCode 取消自动补全请求后，仍保留已经发出的网络请求；结果返回后会缓存，并在光标未移动时重新触发显示。
 - 右下角状态栏反映真实请求状态：请求未结束时转圈，并发请求时显示数量，全部结束后才回到 ready 或 warning。
 - API key 只从环境变量读取，不写入仓库、VSCode settings 或 release 包。
@@ -60,7 +62,10 @@ VSCode settings 示例：
   "ppapTab.maxOpenFileChars": 4000,
   "ppapTab.autoTriggerAfterEdit": true,
   "ppapTab.autoTriggerAfterCursorMove": true,
-  "ppapTab.autoTriggerDelayMs": 0
+  "ppapTab.autoTriggerDelayMs": 0,
+  "ppapTab.aggressiveAutoTrigger": true,
+  "ppapTab.autoTriggerBurstCount": 3,
+  "ppapTab.autoTriggerBurstIntervalMs": 80
 }
 ```
 
@@ -81,6 +86,7 @@ VSCode settings 示例：
 - `ppapTab.enabled` 是否为 `true`。
 - `ppapTab.autoTriggerAfterEdit` 是否为 `true`。
 - `ppapTab.autoTriggerAfterCursorMove` 是否为 `true`。
+- `ppapTab.aggressiveAutoTrigger` 是否为 `true`。
 - VSCode 是否已经执行 `Developer: Reload Window`。
 - `PPAP Tab: Test API` 是否能返回成功。
 - `PPAP Tab: Show Output` 中是否有 endpoint、鉴权、超时或模型错误。
@@ -140,6 +146,8 @@ The project is not tied to a private service. You can use a self-hosted gateway,
 - Supports single-line and multi-line completions.
 - Uses current-file prefix/suffix, a cursor-window snippet, and visible/open file snippets as context.
 - Prioritizes user experience by default: zero debounce, active triggers after edits and cursor movement, and larger context/completion budgets.
+- Aggressive trigger mode actively triggers completion after common editor actions: typing, Space, Enter, Backspace, Delete, paste, cut, copy, undo, redo, arrow movement, selection movement, Home/End, PageUp/PageDown, editor switching, document open/save, visible range scrolling, and window focus.
+- Each event schedules multiple trigger bursts, so rapid consecutive editor actions do not cancel earlier trigger attempts.
 - Keeps in-flight network requests alive after VSCode cancels an automatic inline request; late responses are cached and retriggered when the cursor has not moved.
 - The bottom-right status bar reflects real request state: it spins while requests are active, shows concurrent request count, and returns to ready or warning only after all requests finish.
 - Reads API keys from environment variables only; keys are not written to the repository, VSCode settings, or release packages.
@@ -187,7 +195,10 @@ Example VSCode settings:
   "ppapTab.maxOpenFileChars": 4000,
   "ppapTab.autoTriggerAfterEdit": true,
   "ppapTab.autoTriggerAfterCursorMove": true,
-  "ppapTab.autoTriggerDelayMs": 0
+  "ppapTab.autoTriggerDelayMs": 0,
+  "ppapTab.aggressiveAutoTrigger": true,
+  "ppapTab.autoTriggerBurstCount": 3,
+  "ppapTab.autoTriggerBurstIntervalMs": 80
 }
 ```
 
@@ -208,6 +219,7 @@ If suggestions do not appear automatically, check:
 - `ppapTab.enabled` is `true`.
 - `ppapTab.autoTriggerAfterEdit` is `true`.
 - `ppapTab.autoTriggerAfterCursorMove` is `true`.
+- `ppapTab.aggressiveAutoTrigger` is `true`.
 - VSCode has been reloaded with `Developer: Reload Window`.
 - `PPAP Tab: Test API` succeeds.
 - `PPAP Tab: Show Output` has no endpoint, auth, timeout, or model errors.

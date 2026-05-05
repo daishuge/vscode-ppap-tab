@@ -131,13 +131,13 @@ function readEnvValue(name) {
 
 function getConfig() {
   const cfg = vscode.workspace.getConfiguration('ppapTab');
-  const urlEnvName = cfg.get('urlEnvName', '补全url');
-  const keyEnvName = cfg.get('keyEnvName', '补全key');
-  const configuredBaseUrl = cfg.get('baseUrl', 'http://m.daishuge.win:8317/v1');
-  const envBaseUrl = readEnvValue(urlEnvName) || readEnvValue('PPAP_COMPLETION_URL');
+  const urlEnvName = cfg.get('urlEnvName', 'PPAP_COMPLETION_URL');
+  const keyEnvName = cfg.get('keyEnvName', 'PPAP_COMPLETION_KEY');
+  const configuredBaseUrl = cfg.get('baseUrl', 'https://your-openai-compatible-host/v1');
+  const envBaseUrl = readEnvValue(urlEnvName) || readEnvValue('补全url') || readEnvValue('PPAP_COMPLETION_URL');
   return {
     enabled: cfg.get('enabled', true),
-    model: cfg.get('model', 'gpt-5.3-codex-spark'),
+    model: cfg.get('model', 'your-code-model'),
     baseUrl: String(envBaseUrl || configuredBaseUrl).replace(/\/+$/, ''),
     urlEnvName,
     keyEnvName,
@@ -156,6 +156,17 @@ function getConfig() {
     autoTriggerAfterEdit: cfg.get('autoTriggerAfterEdit', true),
     autoTriggerAfterCursorMove: cfg.get('autoTriggerAfterCursorMove', true),
     autoTriggerDelayMs: cfg.get('autoTriggerDelayMs', 0),
+    aggressiveAutoTrigger: cfg.get('aggressiveAutoTrigger', true),
+    autoTriggerAfterActiveEditorChange: cfg.get('autoTriggerAfterActiveEditorChange', true),
+    autoTriggerAfterVisibleEditorsChange: cfg.get('autoTriggerAfterVisibleEditorsChange', true),
+    autoTriggerAfterVisibleRangeChange: cfg.get('autoTriggerAfterVisibleRangeChange', true),
+    autoTriggerAfterDocumentOpen: cfg.get('autoTriggerAfterDocumentOpen', true),
+    autoTriggerAfterDocumentSave: cfg.get('autoTriggerAfterDocumentSave', true),
+    autoTriggerAfterClipboardCommand: cfg.get('autoTriggerAfterClipboardCommand', true),
+    autoTriggerAfterWindowFocus: cfg.get('autoTriggerAfterWindowFocus', true),
+    autoTriggerBurstCount: cfg.get('autoTriggerBurstCount', 3),
+    autoTriggerBurstIntervalMs: cfg.get('autoTriggerBurstIntervalMs', 80),
+    maxScheduledTriggers: cfg.get('maxScheduledTriggers', 100),
     temperature: cfg.get('temperature', 0.05),
     excludePatterns: cfg.get('excludePatterns', [])
   };
@@ -184,7 +195,7 @@ function parseEnvFile(filePath) {
 }
 
 function loadSecret(config) {
-  const envKey = readEnvValue(config.keyEnvName) || readEnvValue('PPAP_COMPLETION_KEY') || readEnvValue('PPAP_API_KEY');
+  const envKey = readEnvValue(config.keyEnvName) || readEnvValue('补全key') || readEnvValue('PPAP_COMPLETION_KEY') || readEnvValue('PPAP_API_KEY');
   if (envKey) {
     return envKey;
   }
@@ -199,6 +210,8 @@ function prewarmEnvironmentCache() {
     config.keyEnvName,
     'PPAP_COMPLETION_URL',
     'PPAP_COMPLETION_KEY',
+    '补全url',
+    '补全key',
     'PPAP_API_KEY'
   ].filter(Boolean);
   for (const name of names) {
@@ -498,7 +511,7 @@ class PpapInlineProvider {
     this.cache = new Map();
     this.pending = new Map();
     this.current = undefined;
-    this.activeTriggerTimer = undefined;
+    this.activeTriggerTimers = new Set();
     this.retriggerTimers = new Map();
     this.stats = {
       shown: 0,
@@ -539,23 +552,29 @@ class PpapInlineProvider {
     if (!editor || shouldSkipDocument(editor.document, config)) {
       return;
     }
-    if (this.activeTriggerTimer) {
-      clearTimeout(this.activeTriggerTimer);
-    }
     const delay = Math.max(0, Number(delayMs ?? config.autoTriggerDelayMs) || 0);
-    this.activeTriggerTimer = setTimeout(async () => {
-      this.activeTriggerTimer = undefined;
-      const activeEditor = vscode.window.activeTextEditor;
-      if (!activeEditor || shouldSkipDocument(activeEditor.document, getConfig())) {
-        return;
+    const burstCount = Math.max(1, Math.min(10, Number(config.autoTriggerBurstCount) || 1));
+    const burstInterval = Math.max(0, Number(config.autoTriggerBurstIntervalMs) || 0);
+    const maxScheduled = Math.max(1, Number(config.maxScheduledTriggers) || 100);
+    for (let index = 0; index < burstCount; index++) {
+      if (this.activeTriggerTimers.size >= maxScheduled) {
+        break;
       }
-      try {
-        log(`trigger inline suggest after ${reason}`);
-        await vscode.commands.executeCommand('editor.action.inlineSuggest.trigger');
-      } catch (error) {
-        log(`trigger inline suggest failed: ${error.message || error}`);
-      }
-    }, delay);
+      const timer = setTimeout(async () => {
+        this.activeTriggerTimers.delete(timer);
+        const activeEditor = vscode.window.activeTextEditor;
+        if (!activeEditor || shouldSkipDocument(activeEditor.document, getConfig())) {
+          return;
+        }
+        try {
+          log(`trigger inline suggest after ${reason} burst=${index + 1}/${burstCount}`);
+          await vscode.commands.executeCommand('editor.action.inlineSuggest.trigger');
+        } catch (error) {
+          log(`trigger inline suggest failed: ${error.message || error}`);
+        }
+      }, delay + index * burstInterval);
+      this.activeTriggerTimers.add(timer);
+    }
   }
 
   scheduleRetrigger(snapshot) {
@@ -787,6 +806,34 @@ async function testApi() {
   }
 }
 
+async function runEditorCommandAndTrigger(commandId, reason, args) {
+  try {
+    if (args === undefined) {
+      await vscode.commands.executeCommand(commandId);
+    } else {
+      await vscode.commands.executeCommand(commandId, args);
+    }
+  } finally {
+    const config = getConfig();
+    if (config.aggressiveAutoTrigger) {
+      provider?.triggerActiveInlineSoon(reason, config.autoTriggerDelayMs);
+    }
+  }
+}
+
+async function typeAndTrigger(args = {}) {
+  const text = typeof args === 'string' ? args : args.text;
+  await runEditorCommandAndTrigger('type', `type ${JSON.stringify(text || '')}`, { text: text || '' });
+}
+
+async function editorCommandAndTrigger(args = {}) {
+  const command = args.command;
+  if (!command) {
+    return;
+  }
+  await runEditorCommandAndTrigger(command, args.reason || command, args.args);
+}
+
 function activate(context) {
   output = vscode.window.createOutputChannel('PPAP Tab');
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);
@@ -806,17 +853,62 @@ function activate(context) {
   }));
   context.subscriptions.push(vscode.commands.registerCommand('ppapTab.test', testApi));
   context.subscriptions.push(vscode.commands.registerCommand('ppapTab.showOutput', () => output.show()));
+  context.subscriptions.push(vscode.commands.registerCommand('ppapTab.typeAndTrigger', typeAndTrigger));
+  context.subscriptions.push(vscode.commands.registerCommand('ppapTab.editorCommandAndTrigger', editorCommandAndTrigger));
+  context.subscriptions.push(vscode.commands.registerCommand('ppapTab.copyAndTrigger', () => runEditorCommandAndTrigger('editor.action.clipboardCopyAction', 'copy command')));
+  context.subscriptions.push(vscode.commands.registerCommand('ppapTab.cutAndTrigger', () => runEditorCommandAndTrigger('editor.action.clipboardCutAction', 'cut command')));
+  context.subscriptions.push(vscode.commands.registerCommand('ppapTab.pasteAndTrigger', () => runEditorCommandAndTrigger('editor.action.clipboardPasteAction', 'paste command')));
+  context.subscriptions.push(vscode.commands.registerCommand('ppapTab.undoAndTrigger', () => runEditorCommandAndTrigger('undo', 'undo command')));
+  context.subscriptions.push(vscode.commands.registerCommand('ppapTab.redoAndTrigger', () => runEditorCommandAndTrigger('redo', 'redo command')));
   context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
     const config = getConfig();
     const editor = vscode.window.activeTextEditor;
-    if (config.autoTriggerAfterEdit && editor && event.document.uri.toString() === editor.document.uri.toString()) {
+    if (config.aggressiveAutoTrigger && config.autoTriggerAfterEdit && editor && event.document.uri.toString() === editor.document.uri.toString()) {
       provider.triggerActiveInlineSoon('edit', config.autoTriggerDelayMs);
     }
   }));
   context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection((event) => {
     const config = getConfig();
-    if (config.autoTriggerAfterCursorMove && event.textEditor === vscode.window.activeTextEditor) {
+    if (config.aggressiveAutoTrigger && config.autoTriggerAfterCursorMove && event.textEditor === vscode.window.activeTextEditor) {
       provider.triggerActiveInlineSoon('cursor move', config.autoTriggerDelayMs);
+    }
+  }));
+  context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor((editor) => {
+    const config = getConfig();
+    if (config.aggressiveAutoTrigger && config.autoTriggerAfterActiveEditorChange && editor) {
+      provider.triggerActiveInlineSoon('active editor change', config.autoTriggerDelayMs);
+    }
+  }));
+  context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(() => {
+    const config = getConfig();
+    if (config.aggressiveAutoTrigger && config.autoTriggerAfterVisibleEditorsChange) {
+      provider.triggerActiveInlineSoon('visible editors change', config.autoTriggerDelayMs);
+    }
+  }));
+  context.subscriptions.push(vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
+    const config = getConfig();
+    if (config.aggressiveAutoTrigger && config.autoTriggerAfterVisibleRangeChange && event.textEditor === vscode.window.activeTextEditor) {
+      provider.triggerActiveInlineSoon('visible range change', config.autoTriggerDelayMs);
+    }
+  }));
+  context.subscriptions.push(vscode.workspace.onDidOpenTextDocument((document) => {
+    const config = getConfig();
+    const editor = vscode.window.activeTextEditor;
+    if (config.aggressiveAutoTrigger && config.autoTriggerAfterDocumentOpen && editor && document.uri.toString() === editor.document.uri.toString()) {
+      provider.triggerActiveInlineSoon('document open', config.autoTriggerDelayMs);
+    }
+  }));
+  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument((document) => {
+    const config = getConfig();
+    const editor = vscode.window.activeTextEditor;
+    if (config.aggressiveAutoTrigger && config.autoTriggerAfterDocumentSave && editor && document.uri.toString() === editor.document.uri.toString()) {
+      provider.triggerActiveInlineSoon('document save', config.autoTriggerDelayMs);
+    }
+  }));
+  context.subscriptions.push(vscode.window.onDidChangeWindowState((state) => {
+    const config = getConfig();
+    if (config.aggressiveAutoTrigger && config.autoTriggerAfterWindowFocus && state.focused) {
+      provider.triggerActiveInlineSoon('window focus', config.autoTriggerDelayMs);
     }
   }));
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {

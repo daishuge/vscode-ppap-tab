@@ -2,7 +2,7 @@
   "name": "ppap-tab",
   "displayName": "PPAP Tab",
   "description": "Cursor/Copilot-style VS Code inline Tab completion for OpenAI-compatible PPAP endpoints.",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "publisher": "daishuge",
   "license": "MIT",
   "repository": {
@@ -47,6 +47,34 @@
       {
         "command": "ppapTab.showOutput",
         "title": "PPAP Tab: Show Output"
+      },
+      {
+        "command": "ppapTab.typeAndTrigger",
+        "title": "PPAP Tab: Type And Trigger Inline Completion"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "title": "PPAP Tab: Run Editor Command And Trigger Inline Completion"
+      },
+      {
+        "command": "ppapTab.copyAndTrigger",
+        "title": "PPAP Tab: Copy And Trigger Inline Completion"
+      },
+      {
+        "command": "ppapTab.cutAndTrigger",
+        "title": "PPAP Tab: Cut And Trigger Inline Completion"
+      },
+      {
+        "command": "ppapTab.pasteAndTrigger",
+        "title": "PPAP Tab: Paste And Trigger Inline Completion"
+      },
+      {
+        "command": "ppapTab.undoAndTrigger",
+        "title": "PPAP Tab: Undo And Trigger Inline Completion"
+      },
+      {
+        "command": "ppapTab.redoAndTrigger",
+        "title": "PPAP Tab: Redo And Trigger Inline Completion"
       }
     ],
     "keybindings": [
@@ -54,6 +82,240 @@
         "command": "ppapTab.trigger",
         "key": "alt+\\",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "ppapTab.typeAndTrigger",
+        "key": "space",
+        "args": {
+          "text": " "
+        },
+        "when": "editorTextFocus && !editorReadonly && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.typeAndTrigger",
+        "key": "enter",
+        "args": {
+          "text": "\n"
+        },
+        "when": "editorTextFocus && !editorReadonly && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "backspace",
+        "args": {
+          "command": "deleteLeft",
+          "reason": "backspace"
+        },
+        "when": "editorTextFocus && !editorReadonly && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "delete",
+        "args": {
+          "command": "deleteRight",
+          "reason": "delete"
+        },
+        "when": "editorTextFocus && !editorReadonly && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "ctrl+backspace",
+        "args": {
+          "command": "deleteWordLeft",
+          "reason": "ctrl+backspace"
+        },
+        "when": "editorTextFocus && !editorReadonly && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "ctrl+delete",
+        "args": {
+          "command": "deleteWordRight",
+          "reason": "ctrl+delete"
+        },
+        "when": "editorTextFocus && !editorReadonly && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.pasteAndTrigger",
+        "key": "ctrl+v",
+        "when": "editorTextFocus && !editorReadonly && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.copyAndTrigger",
+        "key": "ctrl+c",
+        "when": "editorTextFocus && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.cutAndTrigger",
+        "key": "ctrl+x",
+        "when": "editorTextFocus && !editorReadonly && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.undoAndTrigger",
+        "key": "ctrl+z",
+        "when": "editorTextFocus && !editorReadonly && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.redoAndTrigger",
+        "key": "ctrl+y",
+        "when": "editorTextFocus && !editorReadonly && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.redoAndTrigger",
+        "key": "ctrl+shift+z",
+        "when": "editorTextFocus && !editorReadonly && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "left",
+        "args": {
+          "command": "cursorMove",
+          "reason": "left",
+          "args": {
+            "to": "left",
+            "by": "character",
+            "value": 1
+          }
+        },
+        "when": "editorTextFocus && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "right",
+        "args": {
+          "command": "cursorMove",
+          "reason": "right",
+          "args": {
+            "to": "right",
+            "by": "character",
+            "value": 1
+          }
+        },
+        "when": "editorTextFocus && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "up",
+        "args": {
+          "command": "cursorMove",
+          "reason": "up",
+          "args": {
+            "to": "up",
+            "by": "line",
+            "value": 1
+          }
+        },
+        "when": "editorTextFocus && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "down",
+        "args": {
+          "command": "cursorMove",
+          "reason": "down",
+          "args": {
+            "to": "down",
+            "by": "line",
+            "value": 1
+          }
+        },
+        "when": "editorTextFocus && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "shift+left",
+        "args": {
+          "command": "cursorMove",
+          "reason": "shift+left",
+          "args": {
+            "to": "left",
+            "by": "character",
+            "value": 1,
+            "select": true
+          }
+        },
+        "when": "editorTextFocus && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "shift+right",
+        "args": {
+          "command": "cursorMove",
+          "reason": "shift+right",
+          "args": {
+            "to": "right",
+            "by": "character",
+            "value": 1,
+            "select": true
+          }
+        },
+        "when": "editorTextFocus && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "shift+up",
+        "args": {
+          "command": "cursorMove",
+          "reason": "shift+up",
+          "args": {
+            "to": "up",
+            "by": "line",
+            "value": 1,
+            "select": true
+          }
+        },
+        "when": "editorTextFocus && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "shift+down",
+        "args": {
+          "command": "cursorMove",
+          "reason": "shift+down",
+          "args": {
+            "to": "down",
+            "by": "line",
+            "value": 1,
+            "select": true
+          }
+        },
+        "when": "editorTextFocus && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "home",
+        "args": {
+          "command": "cursorHome",
+          "reason": "home"
+        },
+        "when": "editorTextFocus && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "end",
+        "args": {
+          "command": "cursorEnd",
+          "reason": "end"
+        },
+        "when": "editorTextFocus && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "pageup",
+        "args": {
+          "command": "cursorPageUp",
+          "reason": "pageup"
+        },
+        "when": "editorTextFocus && !suggestWidgetVisible && !renameInputVisible"
+      },
+      {
+        "command": "ppapTab.editorCommandAndTrigger",
+        "key": "pagedown",
+        "args": {
+          "command": "cursorPageDown",
+          "reason": "pagedown"
+        },
+        "when": "editorTextFocus && !suggestWidgetVisible && !renameInputVisible"
       }
     ],
     "configuration": {
@@ -66,22 +328,22 @@
         },
         "ppapTab.model": {
           "type": "string",
-          "default": "gpt-5.3-codex-spark",
+          "default": "your-code-model",
           "description": "Model ID for inline completions."
         },
         "ppapTab.baseUrl": {
           "type": "string",
-          "default": "http://m.daishuge.win:8317/v1",
-          "description": "Fallback OpenAI-compatible API base URL. Environment variable 补全url or PPAP_COMPLETION_URL takes precedence. Do not include /chat/completions."
+          "default": "https://your-openai-compatible-host/v1",
+          "description": "Fallback OpenAI-compatible API base URL. Environment variable PPAP_COMPLETION_URL or 补全url takes precedence. Do not include /chat/completions."
         },
         "ppapTab.urlEnvName": {
           "type": "string",
-          "default": "补全url",
+          "default": "PPAP_COMPLETION_URL",
           "description": "Environment variable name for the OpenAI-compatible API base URL."
         },
         "ppapTab.keyEnvName": {
           "type": "string",
-          "default": "补全key",
+          "default": "PPAP_COMPLETION_KEY",
           "description": "Environment variable name for the API key. The key is never written to VS Code settings."
         },
         "ppapTab.secretEnvPath": {
@@ -180,6 +442,67 @@
           "minimum": 0,
           "maximum": 2000,
           "description": "Delay before active inline suggestion triggers."
+        },
+        "ppapTab.aggressiveAutoTrigger": {
+          "type": "boolean",
+          "default": true,
+          "description": "Trigger inline suggestions on nearly every editor event and wrapped editor command."
+        },
+        "ppapTab.autoTriggerAfterActiveEditorChange": {
+          "type": "boolean",
+          "default": true,
+          "description": "Trigger inline suggestions after switching active editors."
+        },
+        "ppapTab.autoTriggerAfterVisibleEditorsChange": {
+          "type": "boolean",
+          "default": true,
+          "description": "Trigger inline suggestions after visible editor layout changes."
+        },
+        "ppapTab.autoTriggerAfterVisibleRangeChange": {
+          "type": "boolean",
+          "default": true,
+          "description": "Trigger inline suggestions after scrolling or visible range changes."
+        },
+        "ppapTab.autoTriggerAfterDocumentOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Trigger inline suggestions after opening a text document."
+        },
+        "ppapTab.autoTriggerAfterDocumentSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Trigger inline suggestions after saving the active document."
+        },
+        "ppapTab.autoTriggerAfterClipboardCommand": {
+          "type": "boolean",
+          "default": true,
+          "description": "Trigger inline suggestions after wrapped copy, cut, paste, undo, and redo commands."
+        },
+        "ppapTab.autoTriggerAfterWindowFocus": {
+          "type": "boolean",
+          "default": true,
+          "description": "Trigger inline suggestions when the VS Code window regains focus."
+        },
+        "ppapTab.autoTriggerBurstCount": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Number of inline-suggestion trigger attempts scheduled for each editor event."
+        },
+        "ppapTab.autoTriggerBurstIntervalMs": {
+          "type": "number",
+          "default": 80,
+          "minimum": 0,
+          "maximum": 2000,
+          "description": "Delay between burst trigger attempts."
+        },
+        "ppapTab.maxScheduledTriggers": {
+          "type": "number",
+          "default": 100,
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "Maximum queued trigger timers allowed at once."
         },
         "ppapTab.temperature": {
           "type": "number",
